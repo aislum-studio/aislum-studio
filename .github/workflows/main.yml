@@ -23,11 +23,18 @@ jobs:
         mkdir -p ~/.ssh
         echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
         chmod 600 ~/.ssh/known_hosts
+        
+        # We use --exclude to protect important server-side files
         rsync -avz --delete \
+          --exclude '.git/' \
+          --exclude '.github/' \
+          --exclude '.ssh/' \
+          --exclude 'public/uploads/' \
+          --exclude 'database/*.sqlite' \
           -e "ssh -p ${{ secrets.SSH_PORT }}" \
           ./ \
           ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }}:${{ secrets.DEPLOY_PATH }}
 
-    - name: Run post-deployment scripts (optional)
+    - name: Run post-deployment scripts
       run: |
         ssh -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }} "cd ${{ secrets.DEPLOY_PATH }} && php database/init.php"
