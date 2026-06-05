@@ -4,10 +4,12 @@ A lightweight, portable web application for small office multimedia design, docu
 
 ## Project Overview
 
-Aislum Studio is designed to be a scalable, easy-to-deploy solution for small offices that need to manage documents, design business cards, and collaborate on multimedia projects. The application prioritizes simplicity, portability, and minimal resource requirements.
+Aislum Studio is designed to be a scalable, easy-to-deploy solution for small offices that need to design and manage documents, design business cards, and collaborate on multimedia projects. The application prioritizes simplicity, portability, and minimal resource requirements.
 
 ## Technology Stack
 
+- **Domain and Hosting**: aislumstudio.com AT dreamhost.com
+- **Access**: HTTPS
 - **Frontend**: PICO CSS, jQuery
 - **Backend**: PHP
 - **Database**: MySQL, SQLite (for faster access)
