@@ -1,0 +1,38 @@
+# IDE and Editor files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+.DS_Store
+
+# PHP and Server
+config/config.php
+*.log
+.env
+.env.local
+
+# Database files
+*.sqlite
+*.sqlite3
+*.db
+
+# User uploads and temporary files
+public/uploads/*
+!public/uploads/.gitkeep
+public/temp/*
+!public/temp/.gitkeep
+
+# Node modules (if used in future)
+node_modules/
+package-lock.json
+
+# Composer (if used in future)
+vendor/
+composer.lock
+
+# OS files
+Thumbs.db
+.DS_Store
