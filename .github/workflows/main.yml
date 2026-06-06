@@ -38,6 +38,10 @@ jobs:
 
 
 
-    - name: Run post-deployment scripts
-      run: |
-        ssh -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }} "cd ${{ secrets.DEPLOY_PATH }} && php database/init.php"
+        - name: Run post-deployment scripts
+          run: |
+          ssh -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }} "
+          cd ${{ secrets.DEPLOY_PATH }} && \
+          if [ ! -f config/config.php ]; then cp config/config.example.php config/config.php; fi && \
+          php database/init.php
+        "
