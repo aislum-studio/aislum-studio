@@ -20,6 +20,20 @@ require_once __DIR__ . '/../src/helpers/functions.php';
 // Initialize database connection
 $db = Database::getInstance();
 
+// Check session timeout for authenticated users
+if (Auth::isLoggedIn()) {
+    if (!Auth::checkSessionTimeout()) {
+        setFlashMessage('session_expired', 'Your session has expired. Please log in again.', 'warning');
+        redirect('?page=auth&action=login');
+    }
+}
+
+// Handle authentication actions (login, register, logout)
+if (isset($_GET['page']) && $_GET['page'] === 'auth' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    require __DIR__ . '/../src/api/auth_api.php';
+    exit();
+}
+
 // Get the requested page/action
 $page = isset($_GET['page']) ? sanitize($_GET['page']) : 'dashboard';
 $action = isset($_GET['action']) ? sanitize($_GET['action']) : 'index';
