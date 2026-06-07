@@ -1,0 +1,41 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up SSH
+      uses: webfactory/ssh-agent@v0.9.0
+      with:
+        ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+    - name: Deploy via rsync
+      run: |
+        mkdir -p ~/.ssh
+        ssh-keyscan -p ${{ secrets.SSH_PORT }} -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+        chmod 600 ~/.ssh/known_hosts
+        
+        # Ensure all lines except the last one end with a backslash (\)
+        rsync -avz --delete \
+          --exclude '.git/' \
+          --exclude '.github/' \
+          --exclude '.ssh/' \
+          --exclude 'public/uploads/' \
+          --exclude 'database/*.sqlite' \
+          --exclude 'config/config.php' \
+          -e "ssh -p ${{ secrets.SSH_PORT }}" \
+          ./ \
+          ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }}:${{ secrets.DEPLOY_PATH }}
+
+    - name: Run post-deployment scripts
+      run: |
+        ssh -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }} "cd ${{ secrets.DEPLOY_PATH }} && if [ ! -f config/config.php ]; then cp config/config.example.php config/config.php; fi && php database/init.php"
