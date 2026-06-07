@@ -30,6 +30,8 @@ jobs:
           --exclude '.github/' \
           --exclude '.ssh/' \
           --exclude 'public/uploads/' \
+          --exclude 'public/salum/' \
+          --exclude 'salum/' \
           --exclude 'database/*.sqlite' \
           --exclude 'config/config.php' \
           -e "ssh -p ${{ secrets.SSH_PORT }}" \
