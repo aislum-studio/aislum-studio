@@ -34,6 +34,14 @@ if (isset($_GET['page']) && $_GET['page'] === 'auth' && $_SERVER['REQUEST_METHOD
     exit();
 }
 
+// Handle document API actions
+if (isset($_GET['page']) && $_GET['page'] === 'documents' && isset($_GET['action'])) {
+    if (in_array($_GET['action'], ['upload', 'delete', 'list', 'get', 'search', 'categories'])) {
+        require __DIR__ . '/../src/api/document_api.php';
+        exit();
+    }
+}
+
 // Get the requested page/action
 $page = isset($_GET['page']) ? sanitize($_GET['page']) : 'dashboard';
 $action = isset($_GET['action']) ? sanitize($_GET['action']) : 'index';
