@@ -288,7 +288,7 @@ $recentActivity = $db->fetchAll(
             <div class="action-card">
                 <h3>➕ Quick Actions</h3>
                 <p>Start a new project or upload files to your workspace.</p>
-                <a href="?page=documents&action=upload">Upload Document</a>
+                <a href="?page=documents">Upload Document</a>
             </div>
         </div>
         

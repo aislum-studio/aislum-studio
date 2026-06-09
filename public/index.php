@@ -34,11 +34,15 @@ if (isset($_GET['page']) && $_GET['page'] === 'auth' && $_SERVER['REQUEST_METHOD
     exit();
 }
 
-// Handle document API actions
+// Handle document API actions (only for POST or AJAX)
 if (isset($_GET['page']) && $_GET['page'] === 'documents' && isset($_GET['action'])) {
-    if (in_array($_GET['action'], ['upload', 'delete', 'list', 'get', 'search', 'categories'])) {
-        require __DIR__ . '/../src/api/document_api.php';
-        exit();
+    $apiActions = ['upload', 'delete', 'list', 'get', 'search', 'categories'];
+    if (in_array($_GET['action'], $apiActions)) {
+        // Only route to API if it's a POST request or specifically an AJAX action
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' || in_array($_GET['action'], ['list', 'get', 'search', 'categories'])) {
+            require __DIR__ . '/../src/api/document_api.php';
+            exit();
+        }
     }
 }
 

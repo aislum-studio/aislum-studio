@@ -148,6 +148,15 @@ class Database {
     }
     
     /**
+     * Get the last inserted ID
+     * 
+     * @return string
+     */
+    public function lastInsertId() {
+        return $this->pdo->lastInsertId();
+    }
+    
+    /**
      * Begin transaction
      */
     public function beginTransaction() {
