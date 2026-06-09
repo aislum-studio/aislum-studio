@@ -64,7 +64,7 @@ class Document {
         try {
             $result = self::$db->execute(
                 'INSERT INTO documents (user_id, title, description, file_path, file_type, category, created_at, updated_at) 
-                 VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())',
+                 VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)',
                 [$userId, $title, $description, 'documents/' . $fileName, $fileExtension, $category]
             );
             
@@ -176,7 +176,7 @@ class Document {
         
         try {
             $result = self::$db->execute(
-                'UPDATE documents SET title = ?, description = ?, category = ?, updated_at = NOW() WHERE id = ? AND user_id = ?',
+                'UPDATE documents SET title = ?, description = ?, category = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?',
                 [$title, $description, $category, $documentId, $userId]
             );
             
@@ -281,7 +281,7 @@ class Document {
      */
     private static function logActivity($userId, $action, $entityType, $entityId, $details) {
         self::$db->execute(
-            'INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, created_at) VALUES (?, ?, ?, ?, ?, NOW())',
+            'INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, created_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
             [$userId, $action, $entityType, $entityId, $details]
         );
     }
