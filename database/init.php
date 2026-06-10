@@ -1,9 +1,12 @@
 <?php
 /**
  * Database Initialization Script
- * Run this script to initialize the SQLite database with the schema
  * 
- * Usage: php database/init.php
+ * Usage:
+ *   php database/init.php                         # auto-generates a random admin password
+ *   php database/init.php --admin-password=mypass # set your own password
+ * 
+ * Run once during initial setup. Safe to re-run — skips admin creation if user already exists.
  */
 
 require_once __DIR__ . '/../config/config.php';
@@ -11,41 +14,35 @@ require_once __DIR__ . '/../config/config.php';
 function initializeDatabase() {
     try {
         if (DB_TYPE === 'sqlite') {
-            // Create SQLite database
             $db_path = SQLITE_PATH;
-            
-            // Check if database file exists
+
             if (!file_exists($db_path)) {
-                // Create new SQLite database
                 $pdo = new PDO('sqlite:' . $db_path);
                 echo "SQLite database created at: $db_path\n";
             } else {
                 $pdo = new PDO('sqlite:' . $db_path);
                 echo "Connected to existing SQLite database.\n";
             }
-            
-            // Read and execute schema
-            $schema = file_get_contents(__DIR__ . '/schema.sql');
-            
-            // Split schema into individual statements
+
+            $schema     = file_get_contents(__DIR__ . '/schema.sql');
             $statements = array_filter(array_map('trim', explode(';', $schema)));
-            
+
             foreach ($statements as $statement) {
                 if (!empty($statement)) {
-                    // Convert MySQL-specific syntax to SQLite
                     $statement = convertMySQLToSQLite($statement);
                     $pdo->exec($statement);
                 }
             }
-            
+
             echo "Database schema initialized successfully!\n";
-            
-            // Create sample admin user
-            createSampleUser($pdo);
-            
+
+            // FIX: Pass password from CLI argument or generate a secure random one
+            $adminPassword = resolveAdminPassword();
+            createAdminUser($pdo, $adminPassword);
+
             return true;
+
         } elseif (DB_TYPE === 'mysql') {
-            // MySQL initialization would go here
             echo "MySQL initialization not yet implemented.\n";
             return false;
         }
@@ -55,69 +52,71 @@ function initializeDatabase() {
     }
 }
 
+/**
+ * FIX: Resolve admin password from CLI argument or generate a secure random one.
+ * Never falls back to a hardcoded default.
+ */
+function resolveAdminPassword() {
+    global $argv;
+
+    // Accept --admin-password=somevalue from CLI
+    foreach (($argv ?? []) as $arg) {
+        if (strpos($arg, '--admin-password=') === 0) {
+            $password = substr($arg, strlen('--admin-password='));
+            if (strlen($password) < 8) {
+                echo "Error: --admin-password must be at least 8 characters.\n";
+                exit(1);
+            }
+            return $password;
+        }
+    }
+
+    // No argument provided — generate a cryptographically secure random password
+    return bin2hex(random_bytes(12)); // 24-char hex string
+}
+
 function convertMySQLToSQLite($statement) {
-    // Convert MySQL AUTO_INCREMENT to SQLite AUTOINCREMENT
     $statement = str_replace('AUTO_INCREMENT', 'AUTOINCREMENT', $statement);
-    
-    // Convert MySQL ENUM to SQLite TEXT with CHECK constraint
-    // This is a simplified conversion
     $statement = preg_replace('/ENUM\([^)]+\)/', 'TEXT', $statement);
-    
-    // Remove ON UPDATE CURRENT_TIMESTAMP (not supported in SQLite)
     $statement = str_replace('ON UPDATE CURRENT_TIMESTAMP', '', $statement);
-    
-    // Convert TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     $statement = str_replace('TIMESTAMP DEFAULT CURRENT_TIMESTAMP', 'DATETIME DEFAULT CURRENT_TIMESTAMP', $statement);
-    
-    // Remove FOREIGN KEY constraints temporarily (can be added later)
-    // SQLite has limited foreign key support by default
-    
     return $statement;
 }
 
-function createSampleUser($pdo) {
+function createAdminUser($pdo, $password) {
     try {
         $username = 'admin';
-        $email = 'admin@aislumstudio.local';
-        $password = 'admin123'; // Change this in production!
-        
-        // Check if admin user already exists
+        $email    = 'admin@aislumstudio.local';
+
         $stmt = $pdo->prepare('SELECT id FROM users WHERE username = ?');
         $stmt->execute([$username]);
-        
+
         if ($stmt->fetch()) {
-            echo "Admin user already exists.\n";
+            echo "Admin user already exists — skipping creation.\n";
             return;
         }
-        
-        // Create admin user
-        $password_hash = password_hash($password, PASSWORD_BCRYPT, ['cost' => 10]);
+
+        $passwordHash = password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]);
         $stmt = $pdo->prepare('
             INSERT INTO users (username, email, password_hash, full_name, role, is_active)
             VALUES (?, ?, ?, ?, ?, ?)
         ');
-        
-        $stmt->execute([
-            $username,
-            $email,
-            $password_hash,
-            'Administrator',
-            'admin',
-            1
-        ]);
-        
-        echo "Sample admin user created:\n";
-        echo "  Username: $username\n";
-        echo "  Email: $email\n";
-        echo "  Password: $password\n";
-        echo "  ⚠️  IMPORTANT: Change this password immediately in production!\n";
-        
+
+        $stmt->execute([$username, $email, $passwordHash, 'Administrator', 'admin', 1]);
+
+        // FIX: Print password ONCE here, then it's gone — store it immediately
+        echo "\n✅ Admin user created:\n";
+        echo "   Username : $username\n";
+        echo "   Email    : $email\n";
+        echo "   Password : $password\n";
+        echo "\n⚠️  SAVE THIS PASSWORD NOW — it will not be shown again.\n";
+        echo "   Change it after first login via the Profile page.\n\n";
+
     } catch (PDOException $e) {
-        echo "Error creating sample user: " . $e->getMessage() . "\n";
+        echo "Error creating admin user: " . $e->getMessage() . "\n";
     }
 }
 
-// Run initialization
 if (php_sapi_name() === 'cli') {
     if (initializeDatabase()) {
         exit(0);
@@ -125,5 +124,8 @@ if (php_sapi_name() === 'cli') {
         exit(1);
     }
 } else {
-    echo "This script should be run from the command line.\n";
+    // FIX: Block web access entirely — this script must never run via HTTP
+    http_response_code(403);
+    echo "This script must be run from the command line only.";
+    exit(1);
 }
