@@ -1,12 +1,18 @@
 <?php
 /**
- * Auth Class
+ * Document Class
  *
- * Handles user authentication and session management.
+ * Handles all document-related operations including upload, retrieval, and deletion.
+ *
+ * FIX: Removed private static logActivity() — now calls the shared logActivity()
+ *      from src/helpers/functions.php instead.
  */
 
-class Auth {
-    private static $db = null;
+class Document {
+    private static $db          = null;
+    private static $allowedExts = ['pdf','doc','docx','xls','xlsx','ppt','pptx','txt','jpg','jpeg','png','gif','zip','rar'];
+    private static $maxFileSize = 52428800; // 50 MB
+    private static $uploadDir   = __DIR__ . '/../../public/uploads/documents/';
 
     private static function init() {
         if (self::$db === null) {
@@ -15,194 +21,183 @@ class Auth {
     }
 
     /**
-     * Register a new user.
+     * Upload a document.
      */
-    public static function register($username, $email, $password, $fullName) {
+    public static function upload($userId, $title, $description, $category, $file) {
         self::init();
 
-        if (empty($username) || empty($email) || empty($password)) {
-            return ['success' => false, 'message' => 'All fields are required'];
-        }
-        if (!isValidEmail($email)) {
-            return ['success' => false, 'message' => 'Invalid email address'];
-        }
-        if (strlen($password) < 6) {
-            return ['success' => false, 'message' => 'Password must be at least 6 characters'];
+        if (empty($title) || empty($category)) {
+            return ['success' => false, 'message' => 'Title and category are required'];
         }
 
-        $existing = self::$db->fetchOne('SELECT id FROM users WHERE username = ?', [$username]);
-        if ($existing) {
-            return ['success' => false, 'message' => 'Username already exists'];
-        }
-        $existing = self::$db->fetchOne('SELECT id FROM users WHERE email = ?', [$email]);
-        if ($existing) {
-            return ['success' => false, 'message' => 'Email already registered'];
+        $validation = self::validateFile($file);
+        if (!$validation['success']) {
+            return $validation;
         }
 
-        $passwordHash = password_hash($password, PASSWORD_BCRYPT, ['cost' => HASH_COST]);
+        if (!is_dir(self::$uploadDir)) {
+            mkdir(self::$uploadDir, 0755, true);
+        }
+
+        $fileExtension = pathinfo($file['name'], PATHINFO_EXTENSION);
+        $fileName      = uniqid('doc_') . '_' . time() . '.' . $fileExtension;
+        $filePath      = self::$uploadDir . $fileName;
+
+        if (!move_uploaded_file($file['tmp_name'], $filePath)) {
+            return ['success' => false, 'message' => 'Failed to upload file'];
+        }
 
         try {
-            $userId = self::$db->insert('users', [
-                'username'      => $username,
-                'email'         => $email,
-                'password_hash' => $passwordHash,
-                'full_name'     => $fullName,
-                'role'          => 'user',
-                'is_active'     => 1,
-            ]);
-            return ['success' => true, 'message' => 'Registration successful', 'user_id' => $userId];
+            self::$db->execute(
+                'INSERT INTO documents (user_id, title, description, file_path, file_type, category, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)',
+                [$userId, $title, $description, 'documents/' . $fileName, $fileExtension, $category]
+            );
+
+            $newId = self::$db->lastInsertId();
+
+            // FIX: Use shared logActivity() from functions.php
+            logActivity($userId, 'upload', 'document', $newId, "Uploaded document: $title");
+
+            return ['success' => true, 'message' => 'Document uploaded successfully', 'file_id' => $newId];
+
         } catch (Exception $e) {
-            return ['success' => false, 'message' => 'Registration failed: ' . $e->getMessage()];
-        }
-    }
-
-    /**
-     * Login user.
-     */
-    public static function login($username, $password) {
-        self::init();
-
-        if (empty($username) || empty($password)) {
-            return ['success' => false, 'message' => 'Username and password are required'];
-        }
-
-        $user = self::$db->fetchOne(
-            'SELECT * FROM users WHERE (username = ? OR email = ?) AND is_active = 1',
-            [$username, $username]
-        );
-
-        if (!$user || !password_verify($password, $user['password_hash'])) {
-            return ['success' => false, 'message' => 'Invalid username or password'];
-        }
-
-        $_SESSION['user_id']       = $user['id'];
-        $_SESSION['username']      = $user['username'];
-        $_SESSION['email']         = $user['email'];
-        $_SESSION['role']          = $user['role'];
-
-        // FIX: Store login time separately from last activity.
-        // login_time never changes after login.
-        // last_activity is updated on every request and used for idle timeout.
-        $_SESSION['login_time']    = time();
-        $_SESSION['last_activity'] = time();
-
-        return ['success' => true, 'message' => 'Login successful'];
-    }
-
-    /**
-     * Logout user.
-     */
-    public static function logout() {
-        $_SESSION = [];
-        if (ini_get('session.use_cookies')) {
-            $p = session_get_cookie_params();
-            setcookie(session_name(), '', time() - 42000,
-                $p['path'], $p['domain'], $p['secure'], $p['httponly']);
-        }
-        session_destroy();
-    }
-
-    /**
-     * Check if user is logged in.
-     */
-    public static function isLoggedIn() {
-        return isset($_SESSION['user_id']);
-    }
-
-    /**
-     * FIX: Check session timeout properly.
-     *
-     * Two independent checks:
-     *   1. Absolute timeout  — session older than SESSION_TIMEOUT since login
-     *   2. Idle timeout      — no activity for SESSION_IDLE_TIMEOUT seconds
-     *
-     * SESSION_IDLE_TIMEOUT defaults to half of SESSION_TIMEOUT if not defined.
-     *
-     * @return bool  true = session still valid, false = session expired
-     */
-    public static function checkSessionTimeout() {
-        if (!self::isLoggedIn()) {
-            return false;
-        }
-
-        $now         = time();
-        $idleLimit   = defined('SESSION_IDLE_TIMEOUT') ? SESSION_IDLE_TIMEOUT : (int)(SESSION_TIMEOUT / 2);
-
-        // 1. Absolute timeout — has the session lived too long overall?
-        if (isset($_SESSION['login_time']) && ($now - $_SESSION['login_time']) > SESSION_TIMEOUT) {
-            self::logout();
-            return false;
-        }
-
-        // 2. Idle timeout — has the user been inactive too long?
-        if (isset($_SESSION['last_activity']) && ($now - $_SESSION['last_activity']) > $idleLimit) {
-            self::logout();
-            return false;
-        }
-
-        // Session is valid — update last_activity only (login_time stays fixed)
-        $_SESSION['last_activity'] = $now;
-        return true;
-    }
-
-    /**
-     * Change password.
-     */
-    public static function changePassword($userId, $oldPassword, $newPassword) {
-        self::init();
-
-        $user = self::$db->fetchOne('SELECT * FROM users WHERE id = ?', [$userId]);
-        if (!$user) {
-            return ['success' => false, 'message' => 'User not found'];
-        }
-        if (!password_verify($oldPassword, $user['password_hash'])) {
-            return ['success' => false, 'message' => 'Current password is incorrect'];
-        }
-        if (strlen($newPassword) < 6) {
-            return ['success' => false, 'message' => 'New password must be at least 6 characters'];
-        }
-
-        $newPasswordHash = password_hash($newPassword, PASSWORD_BCRYPT, ['cost' => HASH_COST]);
-        self::$db->update('users', ['password_hash' => $newPasswordHash], 'id = ?', [$userId]);
-
-        return ['success' => true, 'message' => 'Password changed successfully'];
-    }
-
-    /**
-     * Update user profile.
-     */
-    public static function updateProfile($userId, $data) {
-        self::init();
-
-        $allowedFields = ['full_name', 'email'];
-        $updateData    = [];
-
-        foreach ($allowedFields as $field) {
-            if (isset($data[$field])) {
-                $updateData[$field] = $data[$field];
+            // Clean up the uploaded file if the DB insert fails
+            if (file_exists($filePath)) {
+                unlink($filePath);
             }
-        }
-
-        if (empty($updateData)) {
-            return ['success' => false, 'message' => 'No data to update'];
-        }
-
-        try {
-            self::$db->update('users', $updateData, 'id = ?', [$userId]);
-            return ['success' => true, 'message' => 'Profile updated successfully'];
-        } catch (Exception $e) {
-            return ['success' => false, 'message' => 'Update failed: ' . $e->getMessage()];
+            return ['success' => false, 'message' => 'Error: ' . $e->getMessage()];
         }
     }
 
     /**
-     * Get user by ID.
+     * Validate an uploaded file.
      */
-    public static function getUserById($userId) {
+    private static function validateFile($file) {
+        if (!isset($file) || $file['error'] !== UPLOAD_ERR_OK) {
+            return ['success' => false, 'message' => 'No file uploaded or upload error occurred'];
+        }
+        if ($file['size'] > self::$maxFileSize) {
+            return ['success' => false, 'message' => 'File size exceeds maximum limit of 50MB'];
+        }
+
+        $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+        if (!in_array($ext, self::$allowedExts)) {
+            return ['success' => false, 'message' => 'File type not allowed. Allowed: ' . implode(', ', self::$allowedExts)];
+        }
+
+        return ['success' => true];
+    }
+
+    /**
+     * Get all documents for a user, optionally filtered by category.
+     */
+    public static function getByUser($userId, $category = null) {
+        self::init();
+
+        if ($category) {
+            return self::$db->fetchAll(
+                'SELECT * FROM documents WHERE user_id = ? AND category = ? ORDER BY created_at DESC',
+                [$userId, $category]
+            );
+        }
+
+        return self::$db->fetchAll(
+            'SELECT * FROM documents WHERE user_id = ? ORDER BY created_at DESC',
+            [$userId]
+        );
+    }
+
+    /**
+     * Get a specific document (ownership-checked).
+     */
+    public static function getById($documentId, $userId) {
         self::init();
         return self::$db->fetchOne(
-            'SELECT id, username, email, full_name, role, is_active, created_at FROM users WHERE id = ?',
+            'SELECT * FROM documents WHERE id = ? AND user_id = ?',
+            [$documentId, $userId]
+        );
+    }
+
+    /**
+     * Update document metadata.
+     */
+    public static function update($documentId, $userId, $title, $description, $category) {
+        self::init();
+
+        $document = self::getById($documentId, $userId);
+        if (!$document) {
+            return ['success' => false, 'message' => 'Document not found or unauthorized'];
+        }
+
+        try {
+            self::$db->execute(
+                'UPDATE documents SET title = ?, description = ?, category = ?, updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ? AND user_id = ?',
+                [$title, $description, $category, $documentId, $userId]
+            );
+
+            // FIX: Use shared logActivity()
+            logActivity($userId, 'update', 'document', $documentId, "Updated document: $title");
+
+            return ['success' => true, 'message' => 'Document updated successfully'];
+        } catch (Exception $e) {
+            return ['success' => false, 'message' => 'Error: ' . $e->getMessage()];
+        }
+    }
+
+    /**
+     * Delete a document (removes file + DB record).
+     */
+    public static function delete($documentId, $userId) {
+        self::init();
+
+        $document = self::getById($documentId, $userId);
+        if (!$document) {
+            return ['success' => false, 'message' => 'Document not found or unauthorized'];
+        }
+
+        try {
+            $filePath = __DIR__ . '/../../public/uploads/' . $document['file_path'];
+            if (file_exists($filePath)) {
+                unlink($filePath);
+            }
+
+            self::$db->execute(
+                'DELETE FROM documents WHERE id = ? AND user_id = ?',
+                [$documentId, $userId]
+            );
+
+            // FIX: Use shared logActivity()
+            logActivity($userId, 'delete', 'document', $documentId, 'Deleted document: ' . $document['title']);
+
+            return ['success' => true, 'message' => 'Document deleted successfully'];
+        } catch (Exception $e) {
+            return ['success' => false, 'message' => 'Error: ' . $e->getMessage()];
+        }
+    }
+
+    /**
+     * Get distinct categories for a user.
+     */
+    public static function getCategories($userId) {
+        self::init();
+        $rows = self::$db->fetchAll(
+            'SELECT DISTINCT category FROM documents WHERE user_id = ? ORDER BY category ASC',
             [$userId]
+        );
+        return array_column($rows, 'category');
+    }
+
+    /**
+     * Search documents by title or description.
+     */
+    public static function search($userId, $query) {
+        self::init();
+        $like = '%' . $query . '%';
+        return self::$db->fetchAll(
+            'SELECT * FROM documents WHERE user_id = ? AND (title LIKE ? OR description LIKE ?) ORDER BY created_at DESC',
+            [$userId, $like, $like]
         );
     }
 }
